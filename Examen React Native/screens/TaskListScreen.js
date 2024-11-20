@@ -146,11 +146,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9f9f9',
   },
   title: {
-    fontSize: 22,  // Mida una mica més petita
+    fontSize: 22,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 20,
     color: '#333',
+    paddingTop: 30,
   },
   taskCard: {
     padding: 15,
@@ -179,7 +180,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   taskTitle: {
-    fontSize: 16,  // Mida del títol més petita
+    fontSize: 16,
     fontWeight: '600',
     color: '#333',
   },
