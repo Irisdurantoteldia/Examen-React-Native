@@ -1,43 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Button, Alert } from 'react-native';
+import { View, Text, FlatList, Alert, StyleSheet, TouchableOpacity, Switch } from 'react-native';
+import { db } from '../Firebase/FirebaseConfig';
+import { collection, getDocs, deleteDoc, doc, updateDoc, addDoc } from 'firebase/firestore';
 
-let taskIdCounter = 4; // Comença amb el 4, per exemple, si ja tens tasques amb ID 1, 2, 3.
+export default function TaskListScreen({ navigation }) {
+  const [tasks, setTasks] = useState([]); // Tasques a mostrar
 
-const TaskListScreen = ({ navigation, route }) => {
-  const [tasks, setTasks] = useState([
-    { id: '1', title: 'Comprar menjar', date: '2024-11-20', completed: false },
-    { id: '2', title: 'Estudiar React Native', date: '2024-11-21', completed: false },
-    { id: '3', title: 'Fer exercici', date: '2024-11-22', completed: false },
-  ]);
+  // Carregar tasques de la base de dades
+  const fetchTasks = async () => {
+    try {
+      const qCol = collection(db, 'Tasks');
+      const tasksSnapshot = await getDocs(qCol);
 
-  // Si la ruta conté una nova tasca o tasca editada, afegim o actualitzem la tasca
-  useEffect(() => {
-    if (route.params?.newTask) {
-      // Si la tasca ve modificada, actualitzem la tasca existent
-      if (route.params?.isEdit) {
-        setTasks((prevTasks) =>
-          prevTasks.map((task) =>
-            task.id === route.params?.newTask.id ? route.params.newTask : task
-          )
-        );
-      } else {
-        // Si és una tasca nova, l'afegim
-        setTasks((prevTasks) => [...prevTasks, route.params.newTask]);
-      }
+      const tasksList = tasksSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          title: data.Title ? data.Title : 'Sense títol',
+          date: data.Date ? data.Date.toDate().toLocaleDateString() : 'Data no disponible',
+          completed: data.Completed !== undefined ? data.Completed : false,
+        };
+      });
+      setTasks(tasksList);
+    } catch (error) {
+      console.error('Error al carregar les tasques:', error);
+      Alert.alert('Error', 'No es poden carregar les tasques.');
     }
-  }, [route.params?.newTask, route.params?.isEdit]);
-
-  // Funció per alternar el completat d'una tasca
-  const toggleComplete = (id) => {
-    setTasks((prevTasks) =>
-      prevTasks.map((task) =>
-        task.id === id ? { ...task, completed: !task.completed } : task
-      )
-    );
   };
 
-  // Funció per eliminar una tasca amb confirmació
-  const deleteTask = (id) => {
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  // Funció per eliminar tasca
+  const handleDelete = (id) => {
     Alert.alert(
       'Confirmació d\'eliminació',
       'Estàs segur que vols eliminar aquesta tasca?',
@@ -48,61 +44,100 @@ const TaskListScreen = ({ navigation, route }) => {
         },
         {
           text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => {
-            setTasks((prevTasks) => prevTasks.filter((task) => task.id !== id));
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'Tasks', id));
+              setTasks(tasks.filter(task => task.id !== id)); // Actualitza l'estat
+              Alert.alert('Tasca eliminada', 'La tasca ha estat eliminada correctament.');
+            } catch (error) {
+              console.error('Error al eliminar la tasca:', error);
+              Alert.alert('Error', 'No es pot eliminar la tasca.');
+            }
           },
         },
       ]
     );
   };
 
-  // Funció per editar una tasca (obrir AddTask amb les dades de la tasca)
-  const editTask = (task) => {
-    navigation.navigate('AddTask', { task, isEdit: true });
+  // Funció per actualitzar tasca (completar o desmarcar com a completada)
+  const handleUpdate = async (id, completed) => {
+    try {
+      const taskRef = doc(db, 'Tasks', id);
+      await updateDoc(taskRef, {
+        Completed: !completed,
+      });
+      setTasks(tasks.map(task =>
+        task.id === id ? { ...task, completed: !completed } : task
+      ));
+    } catch (error) {
+      console.error('Error al actualitzar la tasca:', error);
+      Alert.alert('Error', 'No es pot actualitzar la tasca.');
+    }
   };
 
-  const renderTask = ({ item }) => (
-    <View style={styles.taskContainer}>
-      <TouchableOpacity onPress={() => toggleComplete(item.id)}>
-        <View
-          style={[
-            styles.statusIndicator,
-            { backgroundColor: item.completed ? 'red' : 'green' },
-          ]}
-        />
-      </TouchableOpacity>
-      <View style={styles.taskDetails}>
-        <Text style={[styles.taskTitle, item.completed && styles.completedTask]}>
-          {item.title}
-        </Text>
-        <Text style={styles.taskDate}>{item.date}</Text>
-      </View>
-      <View style={styles.taskActions}>
-        <Button title="Edit" onPress={() => editTask(item)} />
-        <Button title="Delete" color="red" onPress={() => deleteTask(item.id)} />
-      </View>
-    </View>
-  );
+  // Actualitza la llista de tasques després de crear o editar
+  const updateTaskList = (task) => {
+    setTasks(prevTasks => {
+      // Si la tasca ja existeix, la substituïm per la tasca actualitzada
+      const updatedTasks = prevTasks.map(t => t.id === task.id ? task : t);
+      // Si la tasca és nova, l'afegim
+      if (!task.id) {
+        updatedTasks.push(task);
+      }
+      return updatedTasks;
+    });
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Llistat de Tasques</Text>
+      <Text style={styles.title}>Llista de Tasques</Text>
       <FlatList
         data={tasks}
-        renderItem={renderTask}
+        renderItem={({ item }) => (
+          <View style={styles.taskCard}>
+            <View style={styles.taskDetails}>
+              <Switch
+                value={item.completed}
+                onValueChange={() => handleUpdate(item.id, item.completed)}
+                style={styles.switch}
+              />
+              <View style={styles.textContainer}>
+                <Text style={[styles.taskTitle, item.completed && styles.completedText]}>
+                  {item.title}
+                </Text>
+                <Text style={[styles.taskDate, item.completed && styles.completedText]}>
+                  {item.date}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.buttonContainer}>
+              {/* Botó Editar */}
+              <TouchableOpacity onPress={() => navigation.navigate('AddTask', { task: item, updateTaskList })} style={styles.editButton}>
+                <Text style={styles.buttonText}>Editar</Text>
+              </TouchableOpacity>
+              {/* Botó Eliminar */}
+              <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
+                <Text style={styles.buttonText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
       />
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate('AddTask', { isEdit: false })}
-      >
-        <Text style={styles.addButtonText}>+</Text>
-      </TouchableOpacity>
+
+      {/* Botó Afegir Tasca */}
+      <View style={styles.addButtonContainer}>
+        <TouchableOpacity 
+          style={styles.addButton}
+          onPress={() => navigation.navigate('AddTask', { updateTaskList })} 
+        >
+          <Text style={styles.addButtonText}>+</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -110,69 +145,87 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#f9f9f9',
   },
-  header: {
-    fontSize: 24,
+  title: {
+    fontSize: 22,  // Mida una mica més petita
     fontWeight: 'bold',
-    marginBottom: 20,
     textAlign: 'center',
-    paddingTop: 30,
+    marginBottom: 20,
+    color: '#333',
   },
-  listContainer: {
-    paddingBottom: 20,
-  },
-  taskContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  taskCard: {
+    padding: 15,
     marginBottom: 15,
-    padding: 10,
-    backgroundColor: '#fff',
     borderRadius: 10,
+    backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 10,
     elevation: 3,
-  },
-  statusIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   taskDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
+    justifyContent: 'flex-end',
+  },
+  switch: {
+    marginRight: 10,
+  },
+  textContainer: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   taskTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  completedTask: {
-    textDecorationLine: 'line-through',
-    color: 'gray',
+    fontSize: 16,  // Mida del títol més petita
+    fontWeight: '600',
+    color: '#333',
   },
   taskDate: {
-    fontSize: 12,
-    color: 'gray',
+    fontSize: 14,
+    color: '#888',
   },
-  taskActions: {
+  completedText: {
+    textDecorationLine: 'line-through',
+    color: '#bbb',
+  },
+  buttonContainer: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+  },
+  editButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  deleteButton: {
+    backgroundColor: '#F44336',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 5,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+  addButtonContainer: {
+    marginTop: 20,
+    alignItems: 'center',
   },
   addButton: {
-    backgroundColor: '#007BFF',
-    paddingVertical: 15,
-    paddingHorizontal: 25,
+    width: 60,
+    height: 60,
     borderRadius: 30,
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    alignItems: 'center',
+    backgroundColor: '#4CAF50',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   addButtonText: {
+    fontSize: 30,
     color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
   },
 });
-
-export default TaskListScreen;

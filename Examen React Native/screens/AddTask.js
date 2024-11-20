@@ -1,147 +1,82 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Alert, TouchableOpacity, StyleSheet, Switch } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
+import { db } from '../Firebase/FirebaseConfig';
+import { doc, updateDoc, addDoc, collection } from 'firebase/firestore';
 
-const AddTask = ({ navigation, route }) => {
-    const { task, isEdit } = route.params || {}; // Si estem en mode edició, agafem la tasca existent.
-    const [title, setTitle] = useState(isEdit ? task.title : '');
-    const [date, setDate] = useState(isEdit ? new Date(task.date) : null); // Si no és editant, inicialitza com a null
-    const [showDatePicker, setShowDatePicker] = useState(false);
-    const [isDateChecked, setIsDateChecked] = useState(!!date); // Si hi ha data, el checkbox es marca
+export default function AddTaskScreen({ route, navigation }) {
+  const { task, updateTaskList } = route.params || {};  // Si existeix la tasca, la rebem, si no, estem en mode d'afegir una tasca nova
 
-    const generateUniqueId = () => {
-        return String(new Date().getTime()); // Generem un ID únic basat en el temps actual
-    };
+  const [title, setTitle] = useState(task ? task.title : ''); // Carregar títol si existeix tasca
+  const [date, setDate] = useState(task ? task.date : ''); // Carregar data si existeix tasca
 
-    const handleSaveTask = () => {
-        if (!title.trim()) {
-            Alert.alert('Error', 'El títol no pot estar buit, és obligatori.');
-            return;
-        }
+  const handleSaveTask = async () => {
+    if (title === '' || date === '') {
+      Alert.alert('Error', 'El títol i la data són obligatoris');
+      return;
+    }
 
-        const newTask = {
-            id: isEdit ? task.id : generateUniqueId(), // Si estem editant, mantenim l'ID
-            title,
-            date: isDateChecked ? date.toISOString().split('T')[0] : '', // Si no està marcat, deixem la data en blanc
-            completed: false,
-        };
+    try {
+      if (task) {
+        // Si la tasca existeix, actualitzem
+        const taskRef = doc(db, 'Tasks', task.id);
+        await updateDoc(taskRef, {
+          Title: title,
+          Date: new Date(date),
+        });
+        updateTaskList({ ...task, title, date });  // Actualitzar la tasca en la llista de tasques
+      } else {
+        // Si la tasca no existeix, afegim una nova tasca
+        await addDoc(collection(db, 'Tasks'), {
+          Title: title,
+          Date: new Date(date),
+          Completed: false,
+        });
+        updateTaskList({ id: new Date().toString(), title, date });  // Afegir nova tasca a la llista
+      }
 
-        // Tornem a TaskListScreen amb la nova tasca o la tasca editada
-        navigation.navigate('TaskListScreen', { newTask, isEdit });
-    };
+      navigation.goBack();  // Tornar a la llista de tasques
+    } catch (error) {
+      console.error('Error guardant la tasca:', error);
+      Alert.alert('Error', 'No es pot guardar la tasca.');
+    }
+  };
 
-    const handleDateButtonPress = () => {
-        if (isDateChecked) {
-            // Si el switch està marcat, mostra el selector de data
-            setShowDatePicker(true);
-        }
-    };
-
-    return (
-        <View style={styles.container}>
-            <Text style={styles.label}>Títol de la tasca</Text>
-            <TextInput
-                style={styles.input}
-                placeholder="Escriu el títol"
-                value={title}
-                onChangeText={setTitle}
-            />
-
-            {/* Switch per marcar si la tasca té data límit */}
-            <View style={styles.checkboxContainer}>
-                <Switch
-                    value={isDateChecked}
-                    onValueChange={(newValue) => setIsDateChecked(newValue)}
-                    style={styles.checkbox}
-                />
-            </View>
-            <Text style={styles.label}>Data límit</Text>
-
-            {/* Si està marcat, es mostra el selector de data */}
-            {isDateChecked && (
-                <TouchableOpacity
-                    style={styles.dateButton}
-                    onPress={handleDateButtonPress}
-                >
-                    <Text style={styles.dateButtonText}>
-                        {date ? `Data: ${date.toISOString().split('T')[0]}` : 'Selecciona una data límit'}
-                    </Text>
-                </TouchableOpacity>
-            )}
-
-            {showDatePicker && isDateChecked && (
-                <DateTimePicker
-                    value={date || new Date()}
-                    mode="date"
-                    display="default"
-                    onChange={(event, selectedDate) => {
-                        setShowDatePicker(false);
-                        if (selectedDate) setDate(selectedDate);
-                    }}
-                />
-            )}
-
-            <TouchableOpacity style={styles.saveButton} onPress={handleSaveTask}>
-                <Text style={styles.saveButtonText}>Guardar Tasca</Text>
-            </TouchableOpacity>
-        </View>
-    );
-};
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>{task ? 'Editar Tasca' : 'Afegir Tasca'}</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Títol"
+        value={title}
+        onChangeText={setTitle}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Data"
+        value={date}
+        onChangeText={setDate}
+      />
+      <Button title="Guardar" onPress={handleSaveTask} />
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 20,
-    },
-    label: {
-        fontSize: 18,
-        marginBottom: 10,
-        paddingTop: 30,
-    },
-    input: {
-        borderWidth: 1,
-        borderColor: 'gray',
-        padding: 10,
-        borderRadius: 5,
-        marginBottom: 20,
-    },
-    checkboxContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 0,
-        marginTop: 20,
-    },
-    checkbox: {
-        marginLeft: 10,
-    },
-    checkboxLabel: {
-        fontSize: 16,
-    },
-    dateButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 5,
-        marginBottom: 20,
-        backgroundColor: '#4CAF50', // Verd si té data
-        alignItems: 'center',
-    },
-    dateButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    saveButton: {
-        backgroundColor: '#007BFF',
-        paddingVertical: 10,
-        borderRadius: 5,
-        marginTop: 20,
-        alignItems: 'center',
-    },
-    saveButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
+  container: {
+    flex: 1,
+    padding: 20,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  input: {
+    height: 40,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
 });
-
-export default AddTask;
